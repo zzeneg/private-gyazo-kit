@@ -4,6 +4,7 @@ var
   fs = require("fs"),
   crypto = require("crypto"),
   path = require("path"),
+  mime = require('mime'),
   jsonconfig = require("jsonconfig");
 
 jsonconfig.load(["./gyazo.conf"], function(err){
@@ -18,10 +19,10 @@ function connectFile(path, res) {
   var input = fs.createReadStream(path);
   input.pipe(res);
 }
-function distributeFile(file, type, res) {
+function distributeFile(file, res) {
   path.exists(file, function(exists){
     if (exists) {
-      res.writeHead(200, {"Content-Type": type});
+      res.writeHead(200, {"Content-Type": mime.lookup(file)});
       connectFile(file, res);
     } else {
       res.writeHead(404, {"Content-Type": "text/plain"});
@@ -38,42 +39,35 @@ server = http.createServer(function(req, res){
     var form = new formidable.IncomingForm();
     form.encoding = "binary";
     var md5sum = crypto.createHash("md5");
-    var imagedata;
     form.on("file", function(name, file){
-      if (name == "imagedata") {
-        fs.readFile(file.path, function(err, data){
-          if (err) console.log(err);
-          imagedata = data;
-          md5sum.update(imagedata, "binary");
+      fs.readFile(file.path, function(err, data){
+        if (err) console.log(err);
+        var dst_name;
+        if (name == "imagedata") {
+          md5sum.update(data, "binary");
           var hash = md5sum.digest("hex");
-          var dst_name = hash + ".png";
-          var dst_path = "./image/" + dst_name;
-          fs.rename(file.path, dst_path, function(err){
-            if (err) {
-              res.writeHead(500, {"Content-Type": "text/plain"})
-              res.end("cannot write uploaded data");
-            } else {
-              res.writeHead(200, {"Content-Type": "text/plain"});
-              res.end(URL + dst_name);
-              console.log("uploaded " + URL + dst_name);
-            }
-          });
+          dst_name = "./image/" + hash + ".png";
+        }
+        else {
+          dst_name = "./file/" + file.name;
+        }
+        fs.rename(file.path, dst_name, function(err){
+          if (err) {
+            res.writeHead(500, {"Content-Type": "text/plain"})
+            res.end("cannot write uploaded data");
+          } else {
+            res.writeHead(200, {"Content-Type": "text/plain"});
+            res.end(URL + dst_name);
+            console.log("uploaded " + URL + dst_name);
+          }
         });
-      }
+      });
     });
     form.parse(req);
-  } else if (url.indexOf(".png") == 33) {
-    // publish image
-    var imagepath = "./image/" + path.basename(url);
-    distributeFile(imagepath, "image/png", res);
-  } else if (url == "/") {
-    // publish download page
-    res.writeHead(200, {"Content-Type": "text/html"});
-    connectFile("./public/index.html", res);
-  } else {
-    // publish client
-    var filepath = "./public/" + path.basename(url);
-    distributeFile(filepath, "application/octet-stream", res);
+  }
+  else {
+    // publish file
+    distributeFile("./" + url, res);
   }
 });
 
